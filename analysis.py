@@ -1,5 +1,6 @@
 import argparse
 import calendar
+import sqlite3
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -28,7 +29,76 @@ LATITUDE = 34.98
 LONGITUDE = 138.38
 
 OUTPUT_DIR = Path("/app/output")
+DB_PATH = Path("/app/data/weather.db")
 
+def init_db():
+    DB_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS daily_weather (
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                date TEXT NOT NULL,
+                mean_temperature REAL,
+                PRIMARY KEY (
+                    latitude,
+                    longitude,
+                    date
+                )
+            )
+        """)
+
+def load_temperature_from_db(start_date, end_date):
+    with sqlite3.connect(DB_PATH) as conn:
+        return pd.read_sql_query(
+            """
+            SELECT
+                date,
+                mean_temperature AS temperature
+            FROM daily_weather
+            WHERE latitude = ?
+              AND longitude = ?
+              AND date BETWEEN ? AND ?
+            ORDER BY date
+            """,
+            conn,
+            params=(
+                LATITUDE,
+                LONGITUDE,
+                start_date,
+                end_date,
+            ),
+            parse_dates=["date"],
+        )
+
+def save_temperature_to_db(df):
+    rows = [
+        (
+            LATITUDE,
+            LONGITUDE,
+            row.date.strftime("%Y-%m-%d"),
+            row.temperature,
+        )
+        for row in df.itertuples(index=False)
+    ]
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO daily_weather (
+                latitude,
+                longitude,
+                date,
+                mean_temperature
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            rows,
+        )
 
 def get_temperature(year, month=None):
     if month is None:
@@ -39,6 +109,26 @@ def get_temperature(year, month=None):
 
         start_date = f"{year}-{month:02d}-01"
         end_date = f"{year}-{month:02d}-{last_day:02d}"
+
+    cached = load_temperature_from_db(
+        start_date,
+        end_date,
+    )
+
+    expected_days = (
+        pd.Timestamp(end_date)
+        - pd.Timestamp(start_date)
+    ).days + 1
+
+    if len(cached) == expected_days:
+        print(
+            f"cache hit: {start_date} .. {end_date}"
+        )
+        return cached
+
+    print(
+        f"API fetch: {start_date} .. {end_date}"
+    )
 
     params = {
         "latitude": LATITUDE,
@@ -58,11 +148,16 @@ def get_temperature(year, month=None):
 
     data = response.json()["daily"]
 
-    return pd.DataFrame({
+    df = pd.DataFrame({
         "date": pd.to_datetime(data["time"]),
         "temperature": data["temperature_2m_mean"],
     })
 
+    save_temperature_to_db(df)
+
+    return df
+
+init_db()
 
 weather_1 = get_temperature(
     args.year1,
