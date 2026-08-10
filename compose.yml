@@ -1,0 +1,5 @@
+services:
+  analysis:
+    build: .
+    volumes:
+      - ./output:/app/output
