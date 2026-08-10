@@ -10,4 +10,4 @@ RUN uv sync --frozen --no-dev
 
 COPY analysis.py .
 
-CMD ["uv", "run", "python", "analysis.py"]
+ENTRYPOINT ["uv", "run", "python", "analysis.py"]
