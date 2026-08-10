@@ -74,11 +74,24 @@ weather_2 = get_temperature(
     args.month,
 )
 
+weather_1["date_key"] = weather_1["date"].dt.strftime("%m-%d")
+weather_2["date_key"] = weather_2["date"].dt.strftime("%m-%d")
 
-comparison = pd.DataFrame({
-    "date": weather_1["date"].dt.strftime("%m-%d"),
-    str(args.year1): weather_1["temperature"].to_numpy(),
-    str(args.year2): weather_2["temperature"].to_numpy(),
+comparison = pd.merge(
+    weather_1[["date_key", "temperature"]],
+    weather_2[["date_key", "temperature"]],
+    on="date_key",
+    how="inner",
+    suffixes=(
+        f"_{args.year1}",
+        f"_{args.year2}",
+    ),
+)
+
+comparison = comparison.rename(columns={
+    "date_key": "date",
+    f"temperature_{args.year1}": str(args.year1),
+    f"temperature_{args.year2}": str(args.year2),
 })
 
 comparison["difference"] = (
